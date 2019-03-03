@@ -3,7 +3,7 @@
 ## Understanding the Versions
 
 These versions of Marlin are all configured for use on V1Engineering machines. They are all based
-off of the **2.0.x** branch.
+off of the **bugfix-2.0.x** branch.
 
 The branches have the following naming convention:
 
