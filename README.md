@@ -25,7 +25,7 @@ Archim2 - Archim 2
 
 MRambo - mini Rambo 1.4
 
-Rambo - Rambo 1.3
+Rambo - Rambo 1.3+
 
 Ramps - mega/Ramps combo v1.4+
 
