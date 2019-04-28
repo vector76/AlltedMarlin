@@ -1,6 +1,6 @@
 /**
  * Marlin 3D Printer Firmware
- * Copyright (C) 2016 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+ * Copyright (C) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
  *
  * Based on Sprinter and grbl.
  * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
@@ -28,8 +28,8 @@ const short temptable_501[][2] PROGMEM = {
    {OV(  19), 280},
    {OV(  23), 270},
    {OV(  27), 260},
-   {OV(  32), 250},
-   {OV(  30), 240},
+   {OV(  31), 250},
+   {OV(  37), 240},
    {OV(  47), 230},
    {OV(  57), 220},
    {OV(  68), 210},

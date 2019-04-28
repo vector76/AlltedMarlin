@@ -1,6 +1,6 @@
 /**
  * Marlin 3D Printer Firmware
- * Copyright (C) 2016 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+ * Copyright (C) 2019 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
  *
  * Based on Sprinter and grbl.
  * Copyright (C) 2011 Camiel Gubbels / Erik van der Zalm
@@ -28,11 +28,11 @@
  */
 
 #ifndef __SAM3X8E__
-  #error "Oops!  Make sure you have 'Arduino Due' selected from the 'Tools -> Boards' menu."
+  #error "Oops! Select 'Arduino Due' in 'Tools > Board.'"
 #endif
 
 #ifndef BOARD_NAME
-  #define BOARD_NAME       "RAMPS-FD"
+  #define BOARD_NAME "RAMPS-FD v1"
 #endif
 
 #define INVERTED_HEATER_PINS
@@ -108,15 +108,13 @@
 #define TEMP_0_PIN          1   // Analog Input
 #define TEMP_1_PIN          2   // Analog Input
 #define TEMP_2_PIN          3   // Analog Input
-#define TEMP_3_PIN         -1   // fewer compiler warnings
-#define TEMP_4_PIN         -1   // fewer compiler warnings
 #define TEMP_BED_PIN        0   // Analog Input
 
 // SPI for Max6675 or Max31855 Thermocouple
 #if DISABLED(SDSUPPORT)
-  #define MAX6675_SS       53
+  #define MAX6675_SS_PIN   53
 #else
-  #define MAX6675_SS       49
+  #define MAX6675_SS_PIN   49
 #endif
 
 //
@@ -130,7 +128,6 @@
 #ifndef FAN_PIN
   #define FAN_PIN          12
 #endif
-#define CONTROLLER_FAN_PIN -1
 
 //
 // Misc. Functions
@@ -153,28 +150,70 @@
   #if ENABLED(NEWPANEL)
     #define LCD_PINS_RS    16
     #define LCD_PINS_ENABLE 17
+  #endif
+
+  #if ENABLED(FYSETC_MINI_12864)
+    #define DOGLCD_CS      LCD_PINS_ENABLE
+    #define DOGLCD_A0      LCD_PINS_RS
+
+    //#define FORCE_SOFT_SPI    // Use this if default of hardware SPI causes problems
+
+    #define LCD_RESET_PIN  23   // Must be high or open for LCD to operate normally.
+                                // Seems to work best if left open.
+
+    #define FYSETC_MINI_12864_REV_1_2
+    //#define FYSETC_MINI_12864_REV_2_0
+    //#define FYSETC_MINI_12864_REV_2_1
+    #if EITHER(FYSETC_MINI_12864_REV_1_2, FYSETC_MINI_12864_REV_2_0)
+      #ifndef RGB_LED_R_PIN
+        #define RGB_LED_R_PIN 25
+      #endif
+      #ifndef RGB_LED_G_PIN
+        #define RGB_LED_G_PIN 27
+      #endif
+      #ifndef RGB_LED_B_PIN
+        #define RGB_LED_B_PIN 29
+      #endif
+    #elif defined(FYSETC_MINI_12864_REV_2_1)
+      #define NEOPIXEL_LED
+      #define NEOPIXEL_TYPE NEO_GRB    // NEO_GRBW / NEO_GRB - four/three channel driver type (defined in Adafruit_NeoPixel.h)
+      #define NEOPIXEL_PIN    25       // LED driving pin on motherboard 4 => D4 (EXP2-5 on Printrboard) / 30 => PC7 (EXP3-13 on Rumba)
+      #define NEOPIXEL_PIXELS  3       // Number of LEDs in the strip
+      #define NEOPIXEL_IS_SEQUENTIAL   // Sequential display for temperature change - LED by LED. Disable to change all LEDs at once.
+      #define NEOPIXEL_BRIGHTNESS 127  // Initial brightness (0-255)
+      #define NEOPIXEL_STARTUP_TEST    // Cycle through colors at startup
+    #else
+      #error "Either FYSETC_MINI_12864_REV_1_2, FYSETC_MINI_12864_REV_2_0 or FYSETC_MINI_12864_REV_2_1 must be defined"
+    #endif
+
+    #if !defined(LED_USER_PRESET_STARTUP) && EITHER(FYSETC_MINI_12864_REV_2_0, FYSETC_MINI_12864_REV_2_1)
+      #error "LED_USER_PRESET_STARTUP must be enabled when using FYSETC_MINI_12864 REV 2.0 and later"
+    #endif
+
+  #elif ENABLED(NEWPANEL)
+
     #define LCD_PINS_D4    23
     #define LCD_PINS_D5    25
     #define LCD_PINS_D6    27
     #define LCD_PINS_D7    29
+
+    #if ENABLED(MINIPANEL)
+      #define DOGLCD_CS    25
+      #define DOGLCD_A0    27
+    #endif
+
   #endif
 
-  #if ENABLED(MINIPANEL)
-    #define DOGLCD_CS      25
-    #define DOGLCD_A0      27
+  #if ANY(VIKI2, miniVIKI)
+    #define DOGLCD_A0      16
+    #define KILL_PIN       51
+    #define STAT_LED_BLUE_PIN 29
+    #define STAT_LED_RED_PIN 23
+    #define DOGLCD_CS      17
+    #define DOGLCD_SCK     76   // SCK_PIN   - Required for DUE Hardware SPI
+    #define DOGLCD_MOSI    75   // MOSI_PIN
+    #define DOGLCD_MISO    74   // MISO_PIN
   #endif
-
-  #if ENABLED(VIKI2) || ENABLED(miniVIKI)
-    #define DOGLCD_A0           16
-    #define KILL_PIN            51
-    #define STAT_LED_BLUE_PIN   29
-    #define STAT_LED_RED_PIN    23
-    #define DOGLCD_CS           17
-    #define DOGLCD_SCK          76 //SCK_PIN   - required so that the DUE hardware SPI will be used
-    #define DOGLCD_MOSI         75 //MOSI_PIN  - required so that the DUE hardware SPI will be used
-    #define DOGLCD_MISO         74 //MISO_PIN
-  #endif
-
 
 #endif // ULTRA_LCD
 
@@ -201,10 +240,8 @@
 //
 // M3/M4/M5 - Spindle/Laser Control
 //
-#if ENABLED(SPINDLE_LASER_ENABLE) && !PIN_EXISTS(SPINDLE_LASER_ENABLE)
-  #if HOTENDS < 3
-    #define SPINDLE_LASER_ENABLE_PIN  45   // Use E2 ENA
-    #define SPINDLE_LASER_PWM_PIN     12   // MUST BE HARDWARE PWM
-    #define SPINDLE_DIR_PIN           47   // Use E2 DIR
-  #endif
+#if HOTENDS < 3 && ENABLED(SPINDLE_LASER_ENABLE) && !PIN_EXISTS(SPINDLE_LASER_ENA)
+  #define SPINDLE_LASER_ENA_PIN 45   // Use E2 ENA
+  #define SPINDLE_LASER_PWM_PIN 12   // MUST BE HARDWARE PWM
+  #define SPINDLE_DIR_PIN       47   // Use E2 DIR
 #endif
