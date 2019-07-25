@@ -457,6 +457,24 @@ void _O2 Endstops::M119() {
       }
     #endif
   #endif
+
+  #if ENABLED(JOYSTICK)
+    SERIAL_ECHOPGM("Joystick");
+    #if HAS_JOY_ADC_X
+      SERIAL_ECHOPAIR(" X", thermalManager.joy_x.raw);
+    #endif
+    #if HAS_JOY_ADC_Y
+      SERIAL_ECHOPAIR(" Y", thermalManager.joy_y.raw);
+    #endif
+    #if HAS_JOY_ADC_Z
+      SERIAL_ECHOPAIR(" Z", thermalManager.joy_z.raw);
+    #endif
+    #if HAS_JOY_ADC_EN
+      SERIAL_ECHO_TERNARY(READ(JOY_EN_PIN), " EN=", "HIGH (dis", "LOW (en", "abled)");
+    #endif
+    SERIAL_EOL();
+  #endif
+
 } // Endstops::M119
 
 // The following routines are called from an ISR context. It could be the temperature ISR, the
