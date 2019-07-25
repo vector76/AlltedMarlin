@@ -106,6 +106,16 @@ Temperature thermalManager;
 
 hotend_info_t Temperature::temp_hotend[HOTENDS]; // = { 0 }
 
+#if HAS_JOY_ADC_X
+  temp_info_t Temperature::joy_x; // = { 0 }
+#endif
+#if HAS_JOY_ADC_Y
+  temp_info_t Temperature::joy_y; // = { 0 }
+#endif
+#if HAS_JOY_ADC_Z
+  temp_info_t Temperature::joy_z; // = { 0 }
+#endif
+
 #if ENABLED(AUTO_POWER_E_FANS)
   uint8_t Temperature::autofan_speed[HOTENDS]; // = { 0 }
 #endif
@@ -1458,6 +1468,18 @@ void Temperature::init() {
   #if HAS_TEMP_ADC_5
     HAL_ANALOG_SELECT(TEMP_5_PIN);
   #endif
+  #if HAS_JOY_ADC_X
+    HAL_ANALOG_SELECT(JOY_X_PIN);
+  #endif
+  #if HAS_JOY_ADC_Y
+    HAL_ANALOG_SELECT(JOY_Y_PIN);
+  #endif
+  #if HAS_JOY_ADC_Z
+    HAL_ANALOG_SELECT(JOY_Z_PIN);
+  #endif
+  #if HAS_JOY_ADC_EN
+    SET_INPUT_PULLUP(JOY_EN_PIN);
+  #endif
   #if HAS_HEATED_BED
     HAL_ANALOG_SELECT(TEMP_BED_PIN);
   #endif
@@ -1968,6 +1990,16 @@ void Temperature::set_current_temp_raw() {
     temp_chamber.raw = temp_chamber.acc;
   #endif
 
+  #if HAS_JOY_ADC_X
+    joy_x.raw = joy_x.acc;
+  #endif
+  #if HAS_JOY_ADC_Y
+    joy_y.raw = joy_y.acc;
+  #endif
+  #if HAS_JOY_ADC_Z
+    joy_z.raw = joy_z.acc;
+  #endif
+  
   temp_meas_ready = true;
 }
 
@@ -1992,6 +2024,16 @@ void Temperature::readings_ready() {
 
   #if HAS_TEMP_CHAMBER
     temp_chamber.acc = 0;
+  #endif
+
+  #if HAS_JOY_ADC_X
+    joy_x.acc = 0;
+  #endif
+  #if HAS_JOY_ADC_Y
+    joy_y.acc = 0;
+  #endif
+  #if HAS_JOY_ADC_Z
+    joy_z.acc = 0;
   #endif
 
   int constexpr temp_dir[] = {
@@ -2515,6 +2557,33 @@ void Temperature::isr() {
       break;
     #endif
 
+    #if HAS_JOY_ADC_X
+      case PrepareJoy_X:
+        HAL_START_ADC(JOY_X_PIN);
+        break;
+      case MeasureJoy_X:
+        ACCUMULATE_ADC(joy_x);
+        break;
+    #endif
+
+    #if HAS_JOY_ADC_Y
+      case PrepareJoy_Y:
+        HAL_START_ADC(JOY_Y_PIN);
+        break;
+      case MeasureJoy_Y:
+        ACCUMULATE_ADC(joy_y);
+        break;
+    #endif
+
+    #if HAS_JOY_ADC_Z
+      case PrepareJoy_Z:
+        HAL_START_ADC(JOY_Z_PIN);
+        break;
+      case MeasureJoy_Z:
+        ACCUMULATE_ADC(joy_z);
+        break;
+    #endif
+
     #if HAS_ADC_BUTTONS
       case Prepare_ADC_KEY:
         HAL_START_ADC(ADC_KEYPAD_PIN);
@@ -2933,3 +3002,104 @@ void Temperature::isr() {
   #endif // HAS_HEATED_BED
 
 #endif // HAS_TEMP_SENSOR
+
+#if ENABLED(POLL_JOG)
+
+  #if ENABLED(JOYSTICK)
+    void Temperature::calculate_joy_value(float norm_jog[XYZ]) {
+      // Do nothing if enable pin (active-low) is not LOW
+      #if HAS_JOY_ADC_EN
+        if (READ(JOY_EN_PIN)) return;
+      #endif
+
+      auto _normalize_joy = [](float &adc, const int16_t raw, const int16_t (&joy_limits)[4]){
+        if (WITHIN(raw, joy_limits[0], joy_limits[3])) {
+          // within limits, check deadzone
+          if (raw > joy_limits[2])
+            adc = (raw - joy_limits[2]) / float(joy_limits[3] - joy_limits[2]);
+          else if (raw < joy_limits[1])
+            adc = (raw - joy_limits[1]) / float(joy_limits[1] - joy_limits[0]);  // negative value
+        }
+      };
+
+      #if HAS_JOY_ADC_X
+        static constexpr int16_t joy_x_limits[4] = JOY_X_LIMITS;
+        _normalize_joy(norm_jog[X_AXIS], joy_x.raw, joy_x_limits);
+      #endif
+      #if HAS_JOY_ADC_Y
+        static constexpr int16_t joy_y_limits[4] = JOY_Y_LIMITS;
+        _normalize_joy(norm_jog[Y_AXIS], joy_y.raw, joy_y_limits);
+      #endif
+      #if HAS_JOY_ADC_Z
+        static constexpr int16_t joy_z_limits[4] = JOY_Z_LIMITS;
+        _normalize_joy(norm_jog[Z_AXIS], joy_z.raw, joy_z_limits);
+      #endif
+    }
+  #endif // JOYSTICK
+
+  void Temperature::inject_jog_action() {
+    static constexpr int QUEUE_DEPTH = 5;                                 // Insert up to this many movements
+    static constexpr float target_lag = 0.25f,                            // Aim for 1/4th second of lag
+                           seg_time = target_lag / QUEUE_DEPTH;           // 0.05 seconds, short segments inserted every 1/20th of a second
+    static constexpr millis_t timer_limit_ms = millis_t(seg_time * 500);  // 25 ms minimum delay between insertions
+
+    // Recursion barrier
+    static bool injecting_now; // = false;
+    if (injecting_now) return;
+
+    // The planner can merge/collapse small moves, so the movement queue is unreliable to control the lag
+    static millis_t next_run = 0;
+    if (PENDING(millis(), next_run)) return;
+    next_run = millis() + timer_limit_ms;
+
+    // Only inject a command if the planner has fewer than 5 moves and there are no unparsed commands
+    if (planner.movesplanned() >= QUEUE_DEPTH || commands_in_queue > 0)
+      return;
+
+    // Normalized jog values are 0 for no movement and -1 or +1 for as max feedrate (nonlinear relationship)
+    // Jog are initialized to zero and handling input can update values but doesn't have to
+    // You could use a two-axis joystick and a one-axis keypad and they might work together
+    float norm_jog[XYZ] = { 0 };
+
+    #if ENABLED(JOYSTICK)
+      // Uses ADC values and predefined limits, edge of dead zone to maximum value maps linearly to 0 to 1 (or 0 to -1)
+      calculate_joy_value(norm_jog);
+    #endif
+
+    // Other non-joystick poll-based jogging can be implemented here
+
+    // Jogging value maps continuously (quadratic relationship) to feedrate
+    float move_dist[XYZ] = { 0 }, diag_dist = 0;
+    LOOP_XYZ(i) {
+      if (!norm_jog[i]) continue;
+      move_dist[i] = seg_time * sq(norm_jog[i]) * planner.settings.max_feedrate_mm_s[i];
+      // Very small movements disappear when printed as decimal with 4 digits of precision
+      NOLESS(move_dist[i], 0.0002f);
+      if (norm_jog[i] < 0) move_dist[i] *= -1;  // preserve sign
+      diag_dist += sq(move_dist[i]);
+    }
+    if (UNEAR_ZERO(diag_dist)) return;  // no movement
+    diag_dist = sqrt(diag_dist);        // diagonal distance in mm
+
+    const float net_feed_mm_s = diag_dist / seg_time;  // distance traveled divided by segment time
+
+    // G1 X-0.1234 Y-0.1234 Z-0.1234 F1000*
+
+    char tmp[36+5];  // Should fit (with null) in 36 chars. A bit of margin for safety.
+    strcpy_P(tmp, PSTR("G1 X"));
+    dtostrf(move_dist[X_AXIS], 0, 4, &tmp[strlen(tmp)]);
+    strcat_P(tmp, PSTR(" Y"));
+    dtostrf(move_dist[Y_AXIS], 0, 4, &tmp[strlen(tmp)]);
+    strcat_P(tmp, PSTR(" Z"));
+    dtostrf(move_dist[Z_AXIS], 0, 4, &tmp[strlen(tmp)]);
+    strcat_P(tmp, PSTR(" F"));
+    dtostrf(ceil(net_feed_mm_s * 60), 0, 0, &tmp[strlen(tmp)]);
+
+    // Prevent re-entry to this method until done!
+    REMEMBER(inj, injecting_now, true);
+    REMEMBER(rm, relative_mode, true);
+    enqueue_and_echo_command(tmp);
+    advance_command_queue();
+  }
+
+#endif // POLL_JOG
