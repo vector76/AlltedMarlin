@@ -722,6 +722,10 @@ void idle(
   #if ENABLED(PRUSA_MMU2)
     mmu2.mmu_loop();
   #endif
+
+  #if ENABLED(POLL_JOG)
+    thermalManager.inject_jog_action();
+  #endif
 }
 
 /**
